@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/token-tank.png" width="180" alt="Token Tank icon">
+  <img src="assets/token-tank-banner.png" width="720" alt="Token Tank fuel gauge banner">
 </p>
 
 <h1 align="center">pi-token-tank</h1>
