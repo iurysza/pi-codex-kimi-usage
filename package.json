@@ -1,7 +1,7 @@
 {
-  "name": "pi-model-quotas",
-  "version": "0.4.0",
-  "description": "Provider-neutral subscription quota status for Pi",
+  "name": "pi-token-tank",
+  "version": "0.5.0",
+  "description": "Token Tank — provider-aware subscription quota status for Pi",
   "license": "MIT",
   "author": "Iury Souza",
   "keywords": [
@@ -16,10 +16,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iurysza/pi-model-quotas.git"
+    "url": "git+https://github.com/iurysza/pi-token-tank.git"
   },
-  "bugs": "https://github.com/iurysza/pi-model-quotas/issues",
-  "homepage": "https://github.com/iurysza/pi-model-quotas#readme",
+  "bugs": "https://github.com/iurysza/pi-token-tank/issues",
+  "homepage": "https://github.com/iurysza/pi-token-tank#readme",
   "type": "module",
   "main": "src/index.ts",
   "pi": {
@@ -29,6 +29,7 @@
   },
   "files": [
     "src",
+    "assets",
     "README.md",
     "LICENSE"
   ],

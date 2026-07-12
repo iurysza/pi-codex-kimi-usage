@@ -9,8 +9,8 @@ import { loadFooterMode, saveFooterMode, type FooterMode } from "./preferences.j
 import { providerForModel as findProviderForModel, providers } from "./providers.js";
 import type { ProviderId, ProviderQuota, QuotaProvider, QuotaSnapshot } from "./types.js";
 
-const STATUS_KEY = "pi-model-quotas";
-const WIDGET_KEY = "pi-model-quotas";
+const STATUS_KEY = "pi-token-tank";
+const WIDGET_KEY = "pi-token-tank";
 const FRESHNESS_MS = 5 * 60 * 1000;
 
 interface CacheEntry {
@@ -89,7 +89,7 @@ export function providerForModel(model: ExtensionContext["model"]): ProviderId |
   return findProviderForModel(model)?.id;
 }
 
-export function createPiModelQuotas(
+export function createTokenTank(
   pi: ExtensionAPI,
   storageOverride?: AuthStorageLike,
   preferenceFile?: string,
@@ -175,6 +175,6 @@ export function createPiModelQuotas(
 export { providers } from "./providers.js";
 export type { QuotaProvider } from "./types.js";
 
-export default function piCodexKimiUsage(pi: ExtensionAPI) {
-  return createPiModelQuotas(pi);
+export default function tokenTank(pi: ExtensionAPI) {
+  return createTokenTank(pi);
 }

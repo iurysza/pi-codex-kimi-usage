@@ -1,4 +1,10 @@
-# pi-model-quotas
+<p align="center">
+  <img src="assets/token-tank.png" width="180" alt="Token Tank icon">
+</p>
+
+<h1 align="center">pi-token-tank</h1>
+
+<p align="center"><strong>Keep an eye on the tank.</strong></p>
 
 Provider-aware subscription quota status for Pi. It follows the active model, fetches only that provider’s quota, and keeps the footer quiet for unsupported providers.
 
@@ -20,7 +26,7 @@ OpenCode Go is intentionally not supported yet. Its proposed API-key-authenticat
 ## Install
 
 ```sh
-pi install git:github.com/iurysza/pi-model-quotas
+pi install git:github.com/iurysza/pi-token-tank
 ```
 
 Then authenticate the provider you use:
@@ -59,7 +65,7 @@ Full mode adds the configured secondary window:
 | `/quotas minimal` | Show only the active provider’s primary window |
 | `/quotas full` | Show the active provider’s configured full window set |
 
-The selected mode is stored in `pi-model-quotas.json` under Pi’s agent directory. The file contains only `{ "footerMode": "minimal" | "full" }`—never credentials or quota data.
+The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory. The file contains only `{ "footerMode": "minimal" | "full" }`—never credentials or quota data.
 
 ## Refresh and failure behavior
 

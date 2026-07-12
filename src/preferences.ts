@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 export type FooterMode = "minimal" | "full";
 
 export function preferencePath(agentDir = getAgentDir()): string {
-  return join(agentDir, "pi-model-quotas.json");
+  return join(agentDir, "pi-token-tank.json");
 }
 
 export async function loadFooterMode(path = preferencePath()): Promise<FooterMode> {
