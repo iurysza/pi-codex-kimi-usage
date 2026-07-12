@@ -143,7 +143,7 @@ export function createTokenTank(
     coordinator.clear();
   });
 
-  pi.registerCommand("quotas", {
+  pi.registerCommand("token-tank", {
     description: "Toggle details or set footer mode: minimal | full",
     getArgumentCompletions: (prefix) => ["minimal", "full"]
       .filter((value) => value.startsWith(prefix.trim()))
@@ -157,11 +157,11 @@ export function createTokenTank(
         return;
       }
       if (argument) {
-        ctx.ui.notify("Usage: /quotas [minimal|full]", "warning");
+        ctx.ui.notify("Usage: /token-tank [minimal|full]", "warning");
         return;
       }
       if (ctx.mode !== "tui") {
-        ctx.ui.notify("/quotas requires TUI mode", "warning");
+        ctx.ui.notify("/token-tank requires TUI mode", "warning");
         return;
       }
       widgetVisible = !widgetVisible;

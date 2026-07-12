@@ -107,7 +107,7 @@ describe("createTokenTank", () => {
     assert.ok(f.status["pi-token-tank"]?.includes("42%"));
   });
 
-  it("registers /quotas and not /usage", () => {
+  it("registers /token-tank and not /usage", () => {
     fakeAPI();
     const registered: string[] = [];
     const pi = {
@@ -117,7 +117,7 @@ describe("createTokenTank", () => {
       },
     } as unknown as ExtensionAPI;
     createTokenTank(pi, fakeStorage());
-    assert.ok(registered.includes("quotas"));
+    assert.ok(registered.includes("token-tank"));
     assert.ok(!registered.includes("usage"));
   });
 
@@ -134,7 +134,7 @@ describe("createTokenTank", () => {
     }),
   );
 
-  it("toggles the /quotas widget", async () => {
+  it("toggles the /token-tank widget", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async (url) => {
       const body = String(url).includes("chatgpt.com") ? codexUsage : kimiUsage;
@@ -149,9 +149,9 @@ describe("createTokenTank", () => {
           : { type: "api_key", key: "token" },
       } as unknown as AuthStorageLike;
       createTokenTank(f.api, storage);
-      await f.commands.quotas!.handler("", f.ctx);
-      assert.ok(f.widgets["pi-token-tank"]?.includes("Run /quotas again to hide."));
-      await f.commands.quotas!.handler("", f.ctx);
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      assert.ok(f.widgets["pi-token-tank"]?.includes("Run /token-tank again to hide."));
+      await f.commands["token-tank"]!.handler("", f.ctx);
       assert.equal(f.widgets["pi-token-tank"], undefined);
     } finally {
       globalThis.fetch = original;
@@ -182,7 +182,7 @@ describe("createTokenTank", () => {
     try {
       const f = fakeAPI();
       createTokenTank(f.api, fakeStorage(), path);
-      await f.commands.quotas!.handler("full", f.ctx);
+      await f.commands["token-tank"]!.handler("full", f.ctx);
       assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { footerMode: "full" });
       assert.ok(f.status["pi-token-tank"]);
     } finally { await rm(dir, { recursive: true, force: true }); }

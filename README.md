@@ -59,9 +59,11 @@ Full mode adds the configured secondary window:
 
 | Command | Action |
 | --- | --- |
-| `/quotas` | Toggle detailed quota data for every configured provider |
-| `/quotas minimal` | Show only the active provider’s primary window |
-| `/quotas full` | Show the active provider’s configured full window set |
+| `/token-tank` | Toggle detailed quota data for every configured provider |
+| `/token-tank minimal` | Use the compact footer with the primary quota window |
+| `/token-tank full` | Use the bigger footer with every configured quota window |
+
+The details panel also reminds you about `minimal` and `full`, so the larger view is easy to discover.
 
 The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory. The file contains only `{ "footerMode": "minimal" | "full" }`—never credentials or quota data.
 
@@ -70,7 +72,7 @@ The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory
 - Fetches the active provider on session start.
 - Refreshes after turns and model switches when cached data is older than five minutes.
 - Routes immediately when the active model changes.
-- Opening `/quotas` forces all registered providers to refresh independently.
+- Opening `/token-tank` forces all registered providers to refresh independently.
 - Keeps last-good data and marks it stale if a later request fails.
 - Shows `—` when credentials are missing and `!` when a request fails without cached data.
 
@@ -87,4 +89,4 @@ npm pack --dry-run
 
 - `—`: authenticate the active model provider.
 - `!`: verify credentials and network access.
-- Missing footer segment with a custom footer: the custom `ctx.ui.setFooter()` implementation must render extension statuses. `/quotas` remains available.
+- Missing footer segment with a custom footer: the custom `ctx.ui.setFooter()` implementation must render extension statuses. `/token-tank` remains available.

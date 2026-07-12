@@ -120,7 +120,8 @@ export function formatWidget(
 
   const updated = formatUpdatedTime(registry.map((provider) => snapshot[provider.id]?.fetchedAt).find(Boolean));
   lines.push(theme.fg("dim", `Updated ${updated}`));
-  lines.push(theme.fg("dim", "Run /quotas again to hide."));
+  lines.push(theme.fg("dim", "Footer size: /token-tank minimal · /token-tank full"));
+  lines.push(theme.fg("dim", "Run /token-tank again to hide."));
 
   return lines;
 }

@@ -69,6 +69,7 @@ describe("formatWidget", () => {
     assert.ok(text.includes("Codex"));
     assert.ok(text.includes("Kimi"));
     assert.ok(text.includes("24% used"));
-    assert.ok(text.includes("Run /quotas again to hide."));
+    assert.ok(text.includes("Footer size: /token-tank minimal · /token-tank full"));
+    assert.ok(text.includes("Run /token-tank again to hide."));
   });
 });
