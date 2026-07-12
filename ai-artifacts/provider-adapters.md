@@ -45,7 +45,17 @@ const provider: QuotaProvider = {
 
 ## Security boundary
 
-Use direct read-only quota endpoints and Pi `AuthStorage`. Do not add browser-cookie extraction, dashboard scraping, model probes, subprocess fallbacks, credential persistence, or quota persistence without an explicit product decision.
+- Use direct, read-only quota endpoints.
+- Reuse Pi `AuthStorage`; do not add a separate login flow.
+- Do not read browser cookies, scrape dashboards, probe models, or spawn subprocess fallbacks.
+- Never persist tokens, account IDs, raw provider responses, or quota data.
+
+Current provider-controlled data sources:
+
+- Codex: `https://chatgpt.com/backend-api/wham/usage`
+- Kimi: `https://api.kimi.com/coding/v1/usages`
+
+These surfaces may change. Any expansion of this boundary requires an explicit product decision.
 
 ## OpenCode Go
 

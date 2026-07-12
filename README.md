@@ -6,7 +6,7 @@
 
 <p align="center"><strong>Keep an eye on the tank.</strong></p>
 
-Provider-aware subscription quota status for Pi. It follows the active model, fetches only that provider’s quota, and keeps the footer quiet for unsupported providers.
+Provider-aware subscription quota status for Pi. It follows the active model and fetches that provider’s quota.
 
 ```text
 ▰▱▱▱  24%  ↻  3:25
@@ -20,8 +20,6 @@ Provider-aware subscription quota status for Pi. It follows the active model, fe
 | `kimi-coding` | Kimi Coding | Pi `/login kimi-coding` or `KIMI_API_KEY` | 5 hour, weekly |
 
 Unsupported model providers produce no footer status.
-
-OpenCode Go is intentionally not supported yet. Its proposed API-key-authenticated usage endpoint is still unmerged upstream; current alternatives require scraping console HTML with an expiring browser cookie. Once an official endpoint ships, its 5-hour, weekly, and monthly limits can be added as a normal provider adapter.
 
 ## Install
 
@@ -53,7 +51,7 @@ Full mode adds the configured secondary window:
 ```
 
 - Four gauge cells represent 25-point usage buckets.
-- Only the percentage receives threshold color: green below 70%, yellow from 70–89%, red at 90% or higher.
+- Percentage colors show urgency: green under 70%, yellow under 90%, red at 90%+.
 - `~` after a percentage means the extension is showing stale last-good data.
 - Reset timestamps use local time.
 
@@ -76,20 +74,6 @@ The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory
 - Keeps last-good data and marks it stale if a later request fails.
 - Shows `—` when credentials are missing and `!` when a request fails without cached data.
 
-## Privacy
-
-- Uses direct, read-only provider quota endpoints.
-- Reuses Pi’s `AuthStorage`; no separate login flow.
-- Does not read browser cookies, scrape dashboards, probe models, or spawn subprocesses.
-- Never persists tokens, account IDs, raw responses, or quota data.
-
-Current data sources:
-
-- Codex: `https://chatgpt.com/backend-api/wham/usage`
-- Kimi: `https://api.kimi.com/coding/v1/usages`
-
-These are provider-controlled surfaces and may change.
-
 ## Development
 
 ```sh
@@ -98,8 +82,6 @@ npm run check
 npm test
 npm pack --dry-run
 ```
-
-Tests cover response parsing, credential refresh, dynamic provider registration, cache isolation, formatting, preference persistence, and extension lifecycle behavior.
 
 ## Troubleshooting
 
