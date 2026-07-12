@@ -32,6 +32,15 @@ describe("footer gauges", () => {
     assert.equal(formatFooter(quota, "full", plainTheme), "5h  ▰▱▱▱  24%  ↻ 3:25   ·   7d  ▰▱▱▱  15%  ↻ Sun 9:00");
   });
 
+  it("falls back to and labels a remaining weekly window", () => {
+    const quota = liveQuota("codex", 24, 34);
+    quota.windows = quota.windows.filter((window) => window.id === "weekly");
+    assert.equal(
+      formatFooter(quota, "minimal", plainTheme, ["five-hour"]),
+      "7d  ▰▰▱▱  34%  ↻ Sun 9:00",
+    );
+  });
+
   it("marks cached quota percentages as stale", () => {
     const quota = liveQuota("kimi", 48, 35);
     quota.state = "stale";

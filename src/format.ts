@@ -63,13 +63,15 @@ export function formatFooter(
   if (quota.state === "missing") return theme.fg("dim", "—");
   if (quota.state === "error") return theme.fg("dim", "!");
   const ids = windowIds ?? quota.windows.slice(0, mode === "minimal" ? 1 : 2).map((window) => window.id);
-  const windows = ids
+  const selected = ids
     .map((id) => quota.windows.find((window) => window.id === id))
     .filter((window): window is QuotaWindow => Boolean(window));
+  const windows = selected.length > 0 ? selected : quota.windows.slice(0, 1);
   if (windows.length === 0) return theme.fg("dim", "—");
   const stale = quota.state === "stale";
+  const showLabels = mode === "full" || selected.length === 0;
   return windows
-    .map((window) => formatFooterWindow(window, mode === "full", stale, theme))
+    .map((window) => formatFooterWindow(window, showLabels, stale, theme))
     .join(theme.fg("dim", "   ·   "));
 }
 

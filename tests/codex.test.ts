@@ -53,6 +53,30 @@ describe("fetchCodexQuota", () => {
     }
   });
 
+  it("accepts a weekly-only response when the 5-hour limit is disabled", async () => {
+    const body = {
+      plan_type: "prolite",
+      rate_limit: {
+        primary_window: {
+          used_percent: 34,
+          limit_window_seconds: 604800,
+          reset_at: 1752687600,
+        },
+        secondary_window: null,
+      },
+    };
+    const restore = mockFetch(() => new Response(JSON.stringify(body), { status: 200 }));
+    try {
+      const quota = await fetchCodexQuota(mockStorage());
+      assert.equal(quota.state, "live");
+      assert.equal(quota.windows.length, 1);
+      assert.equal(quota.windows[0]?.id, "weekly");
+      assert.equal(quota.windows[0]?.usedPercent, 34);
+    } finally {
+      restore();
+    }
+  });
+
   it("returns missing state when credentials are absent", async () => {
     const quota = await fetchCodexQuota(mockStorage({ noCredential: true }));
     assert.equal(quota.state, "missing");

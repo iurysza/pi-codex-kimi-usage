@@ -7,6 +7,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 interface CodexWindow {
   used_percent?: unknown;
+  limit_window_seconds?: unknown;
   reset_at?: unknown;
   [key: string]: unknown;
 }
@@ -35,12 +36,18 @@ function clampPercent(value: number): number {
 
 function parseWindow(
   value: unknown,
-  window: Pick<QuotaWindow, "id" | "shortLabel" | "longLabel" | "resetStyle">,
+  fallback: Pick<QuotaWindow, "id" | "shortLabel" | "longLabel" | "resetStyle">,
 ): QuotaWindow | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const usedPercent = toNumber(record.used_percent);
   if (usedPercent === undefined) return undefined;
+  const durationSeconds = toNumber(record.limit_window_seconds);
+  const window = durationSeconds === 5 * 60 * 60
+    ? { id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time" as const }
+    : durationSeconds === 7 * 24 * 60 * 60
+      ? { id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time" as const }
+      : fallback;
   const resetRaw = toNumber(record.reset_at);
   const resetsAt =
     resetRaw === undefined
@@ -66,12 +73,13 @@ function parseCodexBody(body: unknown): Omit<ProviderQuota, "provider" | "state"
   const secondary = parseWindow(record.rate_limit?.secondary_window, {
     id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time",
   });
-  if (!primary || !secondary) {
+  const windows = [primary, secondary].filter((window): window is QuotaWindow => Boolean(window));
+  if (windows.length === 0) {
     throw new Error("Invalid Codex usage response: missing rate-limit windows");
   }
   return {
     plan: typeof record.plan_type === "string" ? record.plan_type : undefined,
-    windows: [primary, secondary],
+    windows,
   };
 }
 
