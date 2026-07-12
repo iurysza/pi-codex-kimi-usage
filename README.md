@@ -1,6 +1,6 @@
 # pi-model-quotas
 
-Provider-aware subscription quota status for [Pi](https://github.com/badlogic/pi-mono). It follows the active model, fetches only that provider’s quota, and keeps the footer quiet for unsupported providers.
+Provider-aware subscription quota status for Pi. It follows the active model, fetches only that provider’s quota, and keeps the footer quiet for unsupported providers.
 
 ```text
 ▰▱▱▱  24%  ↻  3:25
