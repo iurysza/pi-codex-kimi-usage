@@ -4,9 +4,15 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { createCredentialSource, type CredentialSourceLike } from "./auth.js";
+import { captureCursorSessionToken, fetchCursorQuotaWithToken } from "./cursor.js";
 import { formatFooter, formatWidget } from "./format.js";
 import { loadFooterMode, saveFooterMode, type FooterMode } from "./preferences.js";
-import { providerForModel as findProviderForModel, providers } from "./providers.js";
+import {
+  createCursorProvider,
+  providerForModel as findProviderForModel,
+  providers,
+  providersForRuntime,
+} from "./providers.js";
 import type { ProviderId, ProviderQuota, QuotaProvider, QuotaSnapshot } from "./types.js";
 
 const STATUS_KEY = "pi-token-tank";
@@ -18,8 +24,15 @@ interface CacheEntry {
   inflight?: Promise<ProviderQuota>;
 }
 
-export function createCoordinator(credentials: CredentialSourceLike, registry: readonly QuotaProvider[]) {
-  const caches = new Map<ProviderId, CacheEntry>(registry.map((provider) => [provider.id, {}]));
+export function createCoordinator(
+  credentials: CredentialSourceLike,
+  registry: readonly QuotaProvider[],
+  initialSnapshot: QuotaSnapshot = {},
+) {
+  const caches = new Map<ProviderId, CacheEntry>(registry.map((provider) => [
+    provider.id,
+    { data: initialSnapshot[provider.id] },
+  ]));
   const providerById = new Map(registry.map((provider) => [provider.id, provider]));
 
   async function refresh(providerId: ProviderId, force: boolean): Promise<ProviderQuota> {
@@ -86,7 +99,7 @@ function makeThemeLike(ctx: ExtensionContext["ui"]) {
 }
 
 export function providerForModel(model: ExtensionContext["model"]): ProviderId | undefined {
-  return findProviderForModel(model)?.id;
+  return findProviderForModel(model, providersForRuntime([], model))?.id;
 }
 
 export function createTokenTank(
@@ -95,25 +108,55 @@ export function createTokenTank(
   preferenceFile?: string,
   registry: readonly QuotaProvider[] = providers,
 ) {
+  const cursorSessionToken = captureCursorSessionToken();
+  const detectedCursorProvider = createCursorProvider(
+    () => fetchCursorQuotaWithToken(cursorSessionToken),
+  );
   let coordinator: ReturnType<typeof createCoordinator> | undefined;
+  let runtimeRegistry: readonly QuotaProvider[] = registry;
+  let pendingProviderIds: ProviderId[] = [];
+  let credentials = credentialSourceOverride;
   let widgetVisible = false;
   let footerMode: FooterMode = "minimal";
 
+  function sameRegistry(left: readonly QuotaProvider[], right: readonly QuotaProvider[]): boolean {
+    return left.length === right.length && left.every((provider, index) => provider.id === right[index]?.id);
+  }
+
   function getCoordinator(ctx: ExtensionContext) {
-    coordinator ??= createCoordinator(
-      credentialSourceOverride ?? createCredentialSource(ctx.modelRegistry),
+    const registryWithOptionalDetection = ctx.modelRegistry as unknown as {
+      getRegisteredProviderIds?: () => readonly string[];
+    };
+    const registeredProviderIds = registryWithOptionalDetection.getRegisteredProviderIds?.() ?? [];
+    const nextRegistry = providersForRuntime(
+      registeredProviderIds,
+      ctx.model,
       registry,
+      detectedCursorProvider,
     );
+    if (!coordinator || !sameRegistry(runtimeRegistry, nextRegistry)) {
+      const previousCoordinator = coordinator;
+      const previousSnapshot = previousCoordinator?.getSnapshot();
+      const previousIds = new Set(runtimeRegistry.map((provider) => provider.id));
+      previousCoordinator?.clear();
+      runtimeRegistry = nextRegistry;
+      pendingProviderIds = previousCoordinator
+        ? runtimeRegistry.filter((provider) => !previousIds.has(provider.id)).map((provider) => provider.id)
+        : [];
+      credentials ??= createCredentialSource(ctx.modelRegistry);
+      coordinator = createCoordinator(credentials, runtimeRegistry, previousSnapshot);
+    }
     return coordinator;
   }
 
   function updateFooter(ctx: ExtensionContext) {
-    const provider = findProviderForModel(ctx.model, registry);
+    const activeCoordinator = getCoordinator(ctx);
+    const provider = findProviderForModel(ctx.model, runtimeRegistry);
     if (!provider) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
       return;
     }
-    const quota = getCoordinator(ctx).getSnapshot()[provider.id];
+    const quota = activeCoordinator.getSnapshot()[provider.id];
     ctx.ui.setStatus(
       STATUS_KEY,
       formatFooter(quota, footerMode, makeThemeLike(ctx.ui), provider.footerWindows[footerMode]),
@@ -125,17 +168,25 @@ export function createTokenTank(
       ctx.ui.setWidget(WIDGET_KEY, undefined);
       return;
     }
+    const activeCoordinator = getCoordinator(ctx);
     ctx.ui.setWidget(
       WIDGET_KEY,
-      formatWidget(getCoordinator(ctx).getSnapshot(), registry, makeThemeLike(ctx.ui), Date.now()),
+      formatWidget(activeCoordinator.getSnapshot(), runtimeRegistry, makeThemeLike(ctx.ui), Date.now()),
     );
   }
 
   async function refreshAndRender(ctx: ExtensionContext, force: boolean) {
     const activeCoordinator = getCoordinator(ctx);
-    const provider = findProviderForModel(ctx.model, registry);
+    const provider = findProviderForModel(ctx.model, runtimeRegistry);
     updateFooter(ctx);
     if (provider) await activeCoordinator.refresh(provider.id, force);
+    if (widgetVisible && pendingProviderIds.length > 0) {
+      const addedProviderIds = pendingProviderIds;
+      pendingProviderIds = [];
+      await Promise.all(addedProviderIds
+        .filter((providerId) => providerId !== provider?.id)
+        .map((providerId) => activeCoordinator.refresh(providerId, force)));
+    }
     updateFooter(ctx);
     if (widgetVisible) updateWidget(ctx);
   }
@@ -153,6 +204,8 @@ export function createTokenTank(
     ctx.ui.setWidget(WIDGET_KEY, undefined);
     coordinator?.clear();
     coordinator = undefined;
+    runtimeRegistry = registry;
+    pendingProviderIds = [];
   });
 
   pi.registerCommand("token-tank", {
@@ -177,7 +230,10 @@ export function createTokenTank(
         return;
       }
       widgetVisible = !widgetVisible;
-      if (widgetVisible) await getCoordinator(ctx).refreshAll(true);
+      if (widgetVisible) {
+        await getCoordinator(ctx).refreshAll(true);
+        pendingProviderIds = [];
+      }
       updateFooter(ctx);
       updateWidget(ctx);
     },

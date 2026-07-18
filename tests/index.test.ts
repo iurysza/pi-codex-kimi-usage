@@ -9,6 +9,7 @@ import type { CredentialSourceLike } from "../src/auth.js";
 import type { QuotaProvider } from "../src/types.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
 import copilotUsage from "./fixtures/copilot-usage.json" with { type: "json" };
+import cursorUsage from "./fixtures/cursor-usage.json" with { type: "json" };
 import kimiUsage from "./fixtures/kimi-usage.json" with { type: "json" };
 
 function fakeCredentials(): CredentialSourceLike {
@@ -31,7 +32,7 @@ function withMockFetch(fn: () => Promise<void>): () => Promise<void> {
   };
 }
 
-function fakeAPI(provider = "openai-codex") {
+function fakeAPI(provider = "openai-codex", registeredProviderIds: string[] = []) {
   const handlers: Record<string, ((event: unknown, ctx: unknown) => Promise<unknown>)[]> = {};
   const status: Record<string, string | undefined> = {};
   const widgets: Record<string, string[] | undefined> = {};
@@ -40,6 +41,9 @@ function fakeAPI(provider = "openai-codex") {
   const ctx: ExtensionContext = {
     mode: "tui",
     model: { provider, id: "test-model" } as ExtensionContext["model"],
+    modelRegistry: {
+      getRegisteredProviderIds: () => registeredProviderIds,
+    } as unknown as ExtensionContext["modelRegistry"],
     ui: {
       setStatus: (key: string, text: string | undefined) => {
         status[key] = text;
@@ -83,7 +87,222 @@ describe("createTokenTank", () => {
     assert.equal(providerForModel({ provider: "openai-codex", id: "gpt" } as ExtensionContext["model"]), "codex");
     assert.equal(providerForModel({ provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"]), "kimi");
     assert.equal(providerForModel({ provider: "github-copilot", id: "gpt" } as ExtensionContext["model"]), "copilot");
+    assert.equal(providerForModel({ provider: "cursor", id: "composer" } as ExtensionContext["model"]), "cursor");
     assert.equal(providerForModel({ provider: "anthropic", id: "claude" } as ExtensionContext["model"]), undefined);
+  });
+
+  it(
+    "keeps existing providers working when registry detection is unavailable",
+    withMockFetch(async () => {
+      const f = fakeAPI("anthropic");
+      f.ctx.modelRegistry = {} as ExtensionContext["modelRegistry"];
+      createTokenTank(f.api, fakeCredentials());
+      await assert.doesNotReject(f.fire("session_start", {}));
+      assert.equal(f.status["pi-token-tank"], undefined);
+    }),
+  );
+
+  it(
+    "leaves the widget unchanged when Cursor is not registered or active",
+    withMockFetch(async () => {
+      const f = fakeAPI("anthropic");
+      createTokenTank(f.api, fakeCredentials());
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(!widget.includes("Cursor"));
+    }),
+  );
+
+  it(
+    "detects a registered Cursor provider while another model is active",
+    withMockFetch(async () => {
+      const originalToken = process.env.CURSOR_SESSION_TOKEN;
+      delete process.env.CURSOR_SESSION_TOKEN;
+      try {
+        const f = fakeAPI("anthropic", ["cursor"]);
+        createTokenTank(f.api, fakeCredentials());
+        await f.commands["token-tank"]!.handler("", f.ctx);
+        const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+        assert.ok(widget.includes("Cursor"));
+        assert.ok(widget.includes("Credentials missing"));
+      } finally {
+        if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+        else process.env.CURSOR_SESSION_TOKEN = originalToken;
+      }
+    }),
+  );
+
+  it("detects a registered Cursor provider and renders its dashboard quota", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "user%3A%3Aheader.payload.signature";
+    globalThis.fetch = (async (url) => String(url).includes("cursor.com")
+      ? new Response(JSON.stringify(cursorUsage), { status: 200 })
+      : new Response("unauthorized", { status: 401 })) as typeof fetch;
+    try {
+      const f = fakeAPI("cursor", ["cursor"]);
+      createTokenTank(f.api, fakeCredentials());
+      assert.equal(process.env.CURSOR_SESSION_TOKEN, undefined);
+      const sessionSymbol = Symbol.for("pi-token-tank.cursor-session-token");
+      assert.equal(Object.prototype.propertyIsEnumerable.call(process, sessionSymbol), false);
+      assert.equal((process as NodeJS.Process & Record<symbol, unknown>)[sessionSymbol], "user%3A%3Aheader.payload.signature");
+      assert.equal(({ ...process } as Record<symbol, unknown>)[sessionSymbol], undefined);
+      await f.fire("session_start", {});
+      assert.ok(f.status["pi-token-tank"]?.includes("19.4%"));
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(widget.includes("Cursor"));
+      assert.ok(widget.includes("19% used"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
+  });
+
+  it("refreshes Cursor when registration appears while the widget is visible", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "visible-user%3A%3Aheader.payload.signature";
+    globalThis.fetch = (async (url) => String(url).includes("cursor.com")
+      ? new Response(JSON.stringify(cursorUsage), { status: 200 })
+      : new Response("unauthorized", { status: 401 })) as typeof fetch;
+    try {
+      const registeredProviderIds: string[] = [];
+      const f = fakeAPI("anthropic", registeredProviderIds);
+      createTokenTank(f.api, fakeCredentials());
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      assert.ok(!f.widgets["pi-token-tank"]?.join("\n").includes("Cursor"));
+
+      registeredProviderIds.push("cursor");
+      await f.fire("turn_end", {});
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(widget.includes("Cursor"));
+      assert.ok(widget.includes("19% used"));
+      assert.ok(!widget.includes("Credentials missing. Set CURSOR_SESSION_TOKEN"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
+  });
+
+  it("retains the captured session token across extension instances", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "reload-user%3A%3Aheader.payload.signature";
+    globalThis.fetch = (async (url) => String(url).includes("cursor.com")
+      ? new Response(JSON.stringify(cursorUsage), { status: 200 })
+      : new Response("unauthorized", { status: 401 })) as typeof fetch;
+    try {
+      const first = fakeAPI("anthropic", ["cursor"]);
+      createTokenTank(first.api, fakeCredentials());
+      assert.equal(process.env.CURSOR_SESSION_TOKEN, undefined);
+
+      const reloaded = fakeAPI("cursor", ["cursor"]);
+      createTokenTank(reloaded.api, fakeCredentials());
+      await reloaded.fire("session_start", {});
+      assert.ok(reloaded.status["pi-token-tank"]?.includes("19.4%"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
+  });
+
+  it("detects Cursor when extension registration appears before model selection", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "user%3A%3Aheader.payload.signature";
+    globalThis.fetch = (async (url) => String(url).includes("cursor.com")
+      ? new Response(JSON.stringify(cursorUsage), { status: 200 })
+      : new Response("unauthorized", { status: 401 })) as typeof fetch;
+    try {
+      const registeredProviderIds: string[] = [];
+      const f = fakeAPI("anthropic", registeredProviderIds);
+      createTokenTank(f.api, fakeCredentials());
+      await f.fire("session_start", {});
+      assert.equal(f.status["pi-token-tank"], undefined);
+
+      registeredProviderIds.push("cursor");
+      f.ctx.model = { provider: "cursor", id: "composer" } as ExtensionContext["model"];
+      await f.fire("model_select", { model: f.ctx.model });
+      assert.ok(String(f.status["pi-token-tank"] ?? "").includes("19.4%"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
+  });
+
+  it("preserves existing provider snapshots when Cursor appears", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "user%3A%3Aheader.payload.signature";
+    globalThis.fetch = (async (url) => String(url).includes("cursor.com")
+      ? new Response(JSON.stringify(cursorUsage), { status: 200 })
+      : new Response("unauthorized", { status: 401 })) as typeof fetch;
+    try {
+      const registeredProviderIds: string[] = [];
+      const existing: QuotaProvider = {
+        id: "existing",
+        label: "Existing",
+        matchesModel: (model) => model?.provider === "existing",
+        fetch: async () => ({
+          provider: "existing",
+          state: "live",
+          fetchedAt: Date.now(),
+          windows: [{
+            id: "monthly",
+            shortLabel: "30d",
+            longLabel: "Monthly",
+            resetStyle: "weekday-time",
+            usedPercent: 42,
+          }],
+        }),
+        credentialsHint: "Configure Existing.",
+        footerWindows: { minimal: ["monthly"], full: ["monthly"] },
+      };
+      const f = fakeAPI("existing", registeredProviderIds);
+      createTokenTank(f.api, fakeCredentials(), undefined, [existing]);
+      await f.fire("session_start", {});
+      assert.ok(f.status["pi-token-tank"]?.includes("42%"));
+
+      registeredProviderIds.push("cursor");
+      f.ctx.model = { provider: "cursor", id: "composer" } as ExtensionContext["model"];
+      await f.fire("model_select", { model: f.ctx.model });
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(widget.includes("Existing"));
+      assert.ok(widget.includes("42% used"));
+      assert.ok(widget.includes("Cursor"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
+  });
+
+  it("never claims Cursor quota from an active model alone", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalToken = process.env.CURSOR_SESSION_TOKEN;
+    process.env.CURSOR_SESSION_TOKEN = "pi-cursor-sdk-cursor-api-key-placeholder";
+    globalThis.fetch = async () => new Response("unauthorized", { status: 401 });
+    try {
+      const f = fakeAPI("cursor", []);
+      createTokenTank(f.api, fakeCredentials());
+      await f.fire("session_start", {});
+      assert.equal(f.status["pi-token-tank"], "—");
+      await f.commands["token-tank"]!.handler("", f.ctx);
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(widget.includes("Cursor"));
+      assert.ok(widget.includes("Credentials missing"));
+      assert.ok(!widget.includes("0% used"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.CURSOR_SESSION_TOKEN;
+      else process.env.CURSOR_SESSION_TOKEN = originalToken;
+    }
   });
 
   it("routes and renders an injected provider adapter", async () => {

@@ -10,7 +10,7 @@
 - a safe credential hint
 - ordered window IDs for minimal and full footer modes
 
-The generic coordinator derives per-provider caches from the registry. It handles freshness, in-flight deduplication, independent refreshes, stale last-good fallback, snapshots, and cleanup. Formatting consumes normalized window metadata; it must not branch on provider IDs.
+The generic coordinator derives per-provider caches from the runtime registry. `providersForRuntime()` adds Cursor only when Pi's public ModelRegistry reports provider id `cursor` or the active model uses it; an absent Cursor extension therefore changes nothing. The coordinator handles freshness, in-flight deduplication, independent refreshes, stale last-good fallback, snapshots, and cleanup. Formatting consumes normalized window metadata; it must not branch on provider IDs.
 
 ## Normalized data
 
@@ -48,18 +48,19 @@ const provider: QuotaProvider = {
 - Use direct, read-only quota endpoints.
 - Resolve keys through `ctx.modelRegistry`; use exported `readStoredCredential` only for read-only credential metadata, except for the explicitly approved Copilot case below.
 - Let the registered provider own OAuth refresh. A forced 401 refresh may be cached in process, but Token Tank never writes Pi credentials.
-- Do not add a separate login flow, read browser cookies, scrape dashboards, probe models, or spawn subprocess fallbacks.
-- Never persist tokens, account IDs, raw provider responses, or normalized quota. Tokens and raw responses are never cached; normalized quota intentionally uses the coordinator's in-memory five-minute/stale cache.
+- Do not add a separate login flow, automatically read browser cookies, scrape dashboard pages, probe models, or spawn subprocess fallbacks.
+- Never persist tokens, account IDs, raw provider responses, or normalized quota. Raw responses are never cached; normalized quota intentionally uses the coordinator's in-memory five-minute/stale cache. The Cursor session token is retained only in the process-only slot documented below, never in the coordinator cache.
 
 Current provider-controlled data sources:
 
 - Codex: `https://chatgpt.com/backend-api/wham/usage`
 - Kimi: `https://api.kimi.com/coding/v1/usages`
 - GitHub Copilot: `https://api.github.com/copilot_internal/user`
+- Cursor: `https://cursor.com/api/usage-summary`
 
 Copilot is the only approved exception to metadata-only stored-credential access. Pi's public model registry exposes the short-lived Copilot session token, but GitHub's quota endpoint requires the stored GitHub OAuth token. The adapter may read the OAuth `refresh` field in memory solely for that direct GET. It must never log, return, refresh, mutate, cache, or persist the token or raw response. The fixed endpoint supports GitHub.com, including Enterprise Cloud seats hosted there; stored custom GitHub Enterprise Server domains are rejected before any request. The endpoint is undocumented and may change without notice.
 
-Cursor remains outside the boundary: Pi has no core Cursor provider, and Cursor has no safe official individual-plan quota API. Do not read browser sessions or scrape Cursor dashboards.
+Cursor is an explicitly approved private-endpoint exception. Runtime detection uses only `ctx.modelRegistry.getRegisteredProviderIds()` and the active model provider; Token Tank never scans packages or filesystems. At extension registration, Token Tank captures the value supplied in `CURSOR_SESSION_TOKEN`, stores it in a process-only non-environment slot that survives extension reloads, and deletes it from `process.env` so Pi tools cannot inherit it. The adapter validates the captured value against header injection and sends it as `WorkosCursorSessionToken` to the read-only dashboard usage summary. It never discovers browser cookies, reads Cursor Desktop/Agent auth databases, imports `pi-cursor-sdk` or `@cursor/sdk`, probes a model, refreshes the session, or treats the SDK placeholder as auth. Cursor's own total percentage wins; finite plan, Enterprise personal, and Enterprise pooled ratios are ordered fallbacks. The endpoint is undocumented and may change without notice.
 
 These surfaces may change. Any further expansion of this boundary requires an explicit product decision.
 

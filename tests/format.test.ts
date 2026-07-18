@@ -41,6 +41,22 @@ describe("footer gauges", () => {
     );
   });
 
+  it("shows Cursor total, Auto, and API windows in full mode", () => {
+    const quota: ProviderQuota = {
+      provider: "cursor",
+      state: "live",
+      windows: [
+        { id: "billing-cycle", shortLabel: "cycle", longLabel: "Total", resetStyle: "weekday-time", usedPercent: 19.4 },
+        { id: "auto", shortLabel: "auto", longLabel: "Auto", resetStyle: "weekday-time", usedPercent: 12.5 },
+        { id: "api", shortLabel: "api", longLabel: "API", resetStyle: "weekday-time", usedPercent: 26.3 },
+      ],
+    };
+    assert.equal(
+      formatFooter(quota, "full", plainTheme, ["billing-cycle", "auto", "api"]),
+      "cycle  ▰▱▱▱  19.4%   ·   auto  ▰▱▱▱  12.5%   ·   api  ▰▰▱▱  26.3%",
+    );
+  });
+
   it("marks cached quota percentages as stale", () => {
     const quota = liveQuota("kimi", 48, 35);
     quota.state = "stale";

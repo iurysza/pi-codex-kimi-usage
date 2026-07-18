@@ -13,7 +13,8 @@
     "footer",
     "codex",
     "kimi",
-    "copilot"
+    "copilot",
+    "cursor"
   ],
   "repository": {
     "type": "git",

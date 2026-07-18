@@ -1,5 +1,6 @@
 import { fetchCodexQuota } from "./codex.js";
 import { fetchCopilotQuota } from "./copilot.js";
+import { fetchCursorQuota } from "./cursor.js";
 import { fetchKimiQuota } from "./kimi.js";
 import type { QuotaProvider } from "./types.js";
 
@@ -32,6 +33,30 @@ export const providers: readonly QuotaProvider[] = [
     footerWindows: { minimal: ["monthly"], full: ["monthly"] },
   },
 ];
+
+export function createCursorProvider(fetch: QuotaProvider["fetch"] = fetchCursorQuota): QuotaProvider {
+  return {
+    id: "cursor",
+    label: "Cursor",
+    matchesModel: (model) => model?.provider.toLowerCase() === "cursor",
+    fetch,
+    credentialsHint: "Set CURSOR_SESSION_TOKEN to your cursor.com WorkosCursorSessionToken cookie value.",
+    footerWindows: { minimal: ["billing-cycle"], full: ["billing-cycle", "auto", "api"] },
+  };
+}
+
+export const cursorProvider = createCursorProvider();
+
+export function providersForRuntime(
+  registeredProviderIds: readonly string[],
+  model: Parameters<QuotaProvider["matchesModel"]>[0],
+  registry: readonly QuotaProvider[] = providers,
+  detectedCursorProvider: QuotaProvider = cursorProvider,
+): readonly QuotaProvider[] {
+  const cursorDetected = registeredProviderIds.includes("cursor") || model?.provider.toLowerCase() === "cursor";
+  if (!cursorDetected || registry.some((provider) => provider.id === "cursor")) return registry;
+  return [...registry, detectedCursorProvider];
+}
 
 export function providerForModel(
   model: Parameters<QuotaProvider["matchesModel"]>[0],
