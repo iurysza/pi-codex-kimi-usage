@@ -1,4 +1,4 @@
-import type { AuthStorageLike, CodexAuthResult } from "./auth.js";
+import type { CodexAuthResult, CredentialSourceLike } from "./auth.js";
 import { getCodexAuth } from "./auth.js";
 import type { ProviderQuota, QuotaWindow } from "./types.js";
 
@@ -133,8 +133,8 @@ async function performCodexFetch(
   };
 }
 
-export async function fetchCodexQuota(storage: AuthStorageLike): Promise<ProviderQuota> {
-  let auth: CodexAuthResult = await getCodexAuth(storage);
+export async function fetchCodexQuota(credentials: CredentialSourceLike): Promise<ProviderQuota> {
+  const auth: CodexAuthResult = await getCodexAuth(credentials);
   if ("error" in auth) {
     return { provider: "codex", state: "missing", windows: [], error: auth.error };
   }
@@ -145,8 +145,7 @@ export async function fetchCodexQuota(storage: AuthStorageLike): Promise<Provide
     const message = error instanceof Error ? error.message : String(error);
     const authError = message.includes("401") || message.includes("403");
     if (authError) {
-      storage.reload();
-      const retry = await getCodexAuth(storage);
+      const retry = await getCodexAuth(credentials);
       if ("error" in retry) {
         return {
           provider: "codex",

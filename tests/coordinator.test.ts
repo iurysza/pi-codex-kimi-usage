@@ -1,14 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createCoordinator } from "../src/index.js";
-import type { AuthStorageLike } from "../src/auth.js";
+import type { CredentialSourceLike } from "../src/auth.js";
 import type { ProviderId, ProviderQuota, QuotaProvider } from "../src/types.js";
 
-function mockStorage(): AuthStorageLike {
+function mockCredentials(): CredentialSourceLike {
   return {
-    getApiKey: async () => "token", get: () => undefined, reload: () => {},
-    getOAuthProviders: () => [], set: () => {},
-  } as unknown as AuthStorageLike;
+    getApiKey: async () => "token",
+    readCredential: () => undefined,
+    refreshOAuthToken: async () => null,
+  };
 }
 
 function live(provider: ProviderId, percent: number): ProviderQuota {
@@ -35,7 +36,7 @@ function registry(codexFetch: QuotaProvider["fetch"], kimiFetch: QuotaProvider["
 
 describe("createCoordinator", () => {
   it("fetches every registered provider", async () => {
-    const c = createCoordinator(mockStorage(), registry(
+    const c = createCoordinator(mockCredentials(), registry(
       async () => live("codex", 10), async () => live("kimi", 20),
     ));
     const snapshot = await c.refreshAll(true);
@@ -44,14 +45,14 @@ describe("createCoordinator", () => {
   });
 
   it("supports adding a provider without coordinator changes", async () => {
-    const c = createCoordinator(mockStorage(), [adapter("future", async () => live("future", 30))]);
+    const c = createCoordinator(mockCredentials(), [adapter("future", async () => live("future", 30))]);
     const snapshot = await c.refreshAll(true);
     assert.equal(snapshot.future?.windows[0]?.usedPercent, 30);
   });
 
   it("deduplicates concurrent refreshes", async () => {
     let calls = 0;
-    const c = createCoordinator(mockStorage(), [adapter("codex", async () => {
+    const c = createCoordinator(mockCredentials(), [adapter("codex", async () => {
       calls++;
       await new Promise((resolve) => setTimeout(resolve, 20));
       return live("codex", 10);
@@ -64,7 +65,7 @@ describe("createCoordinator", () => {
 
   it("uses fresh cache", async () => {
     let calls = 0;
-    const c = createCoordinator(mockStorage(), [adapter("codex", async () => {
+    const c = createCoordinator(mockCredentials(), [adapter("codex", async () => {
       calls++;
       return live("codex", 10);
     })]);
@@ -75,7 +76,7 @@ describe("createCoordinator", () => {
 
   it("keeps last-good data as stale", async () => {
     let succeed = true;
-    const c = createCoordinator(mockStorage(), [adapter("codex", async () => succeed
+    const c = createCoordinator(mockCredentials(), [adapter("codex", async () => succeed
       ? live("codex", 10)
       : { provider: "codex", state: "error", windows: [], error: "network down" })]);
     await c.refreshAll(true);
@@ -86,7 +87,7 @@ describe("createCoordinator", () => {
   });
 
   it("isolates provider failures", async () => {
-    const c = createCoordinator(mockStorage(), registry(
+    const c = createCoordinator(mockCredentials(), registry(
       async () => { throw new Error("secret-bearing failure"); },
       async () => live("kimi", 20),
     ));
@@ -96,7 +97,7 @@ describe("createCoordinator", () => {
   });
 
   it("clears dynamic caches", async () => {
-    const c = createCoordinator(mockStorage(), [adapter("future", async () => live("future", 30))]);
+    const c = createCoordinator(mockCredentials(), [adapter("future", async () => live("future", 30))]);
     await c.refreshAll(true);
     c.clear();
     assert.equal(c.getSnapshot().future?.state, "missing");

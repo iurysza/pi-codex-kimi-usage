@@ -46,8 +46,9 @@ const provider: QuotaProvider = {
 ## Security boundary
 
 - Use direct, read-only quota endpoints.
-- Reuse Pi `AuthStorage`; do not add a separate login flow.
-- Do not read browser cookies, scrape dashboards, probe models, or spawn subprocess fallbacks.
+- Resolve keys through `ctx.modelRegistry`; use exported `readStoredCredential` only for read-only credential metadata.
+- Let the registered provider own OAuth refresh. A forced 401 refresh may be cached in process, but Token Tank never writes Pi credentials.
+- Do not add a separate login flow, read browser cookies, scrape dashboards, probe models, or spawn subprocess fallbacks.
 - Never persist tokens, account IDs, raw provider responses, or quota data.
 
 Current provider-controlled data sources:

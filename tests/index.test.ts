@@ -5,19 +5,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createTokenTank, providerForModel } from "../src/index.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AuthStorageLike } from "../src/auth.js";
+import type { CredentialSourceLike } from "../src/auth.js";
 import type { QuotaProvider } from "../src/types.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
 import kimiUsage from "./fixtures/kimi-usage.json" with { type: "json" };
 
-function fakeStorage(): AuthStorageLike {
+function fakeCredentials(): CredentialSourceLike {
   return {
     getApiKey: async () => "token",
-    get: () => undefined,
-    reload: () => {},
-    getOAuthProviders: () => [],
-    set: () => {},
-  } as unknown as AuthStorageLike;
+    readCredential: () => undefined,
+    refreshOAuthToken: async () => null,
+  };
 }
 
 function withMockFetch(fn: () => Promise<void>): () => Promise<void> {
@@ -102,12 +100,12 @@ describe("createTokenTank", () => {
       footerWindows: { minimal: ["monthly"], full: ["monthly"] },
     };
     const f = fakeAPI("future");
-    createTokenTank(f.api, fakeStorage(), undefined, [future]);
+    createTokenTank(f.api, fakeCredentials(), undefined, [future]);
     await f.fire("session_start", {});
     assert.ok(f.status["pi-token-tank"]?.includes("42%"));
   });
 
-  it("registers /token-tank and not /usage", () => {
+  it("registers without eagerly creating credential storage", () => {
     fakeAPI();
     const registered: string[] = [];
     const pi = {
@@ -116,7 +114,7 @@ describe("createTokenTank", () => {
         registered.push(name);
       },
     } as unknown as ExtensionAPI;
-    createTokenTank(pi, fakeStorage());
+    createTokenTank(pi);
     assert.ok(registered.includes("token-tank"));
     assert.ok(!registered.includes("usage"));
   });
@@ -125,7 +123,7 @@ describe("createTokenTank", () => {
     "sets footer on session_start",
     withMockFetch(async () => {
       const f = fakeAPI();
-      createTokenTank(f.api, fakeStorage());
+      createTokenTank(f.api, fakeCredentials());
       await f.fire("session_start", { type: "session_start", reason: "startup" });
       assert.ok(f.status["pi-token-tank"], "status should be set");
       f.ctx.model = { provider: "anthropic", id: "claude" } as ExtensionContext["model"];
@@ -142,13 +140,13 @@ describe("createTokenTank", () => {
     }) as typeof fetch;
     try {
       const f = fakeAPI();
-      const storage = {
-        ...fakeStorage(),
-        get: (provider: string) => provider === "openai-codex"
+      const credentials = {
+        ...fakeCredentials(),
+        readCredential: (provider: string) => provider === "openai-codex"
           ? { type: "oauth", access: "token", accountId: "acc-1" }
           : { type: "api_key", key: "token" },
-      } as unknown as AuthStorageLike;
-      createTokenTank(f.api, storage);
+      } as CredentialSourceLike;
+      createTokenTank(f.api, credentials);
       await f.commands["token-tank"]!.handler("", f.ctx);
       assert.ok(f.widgets["pi-token-tank"]?.includes("Run /token-tank again to hide."));
       await f.commands["token-tank"]!.handler("", f.ctx);
@@ -163,10 +161,13 @@ describe("createTokenTank", () => {
     globalThis.fetch = (async (url) => new Response(JSON.stringify(String(url).includes("chatgpt.com") ? codexUsage : kimiUsage))) as typeof fetch;
     try {
       const f = fakeAPI("openai-codex");
-      const storage = { ...fakeStorage(), get: (provider: string) => provider === "openai-codex"
-        ? { type: "oauth", access: "token", accountId: "acc-1" }
-        : { type: "api_key", key: "token" } } as unknown as AuthStorageLike;
-      createTokenTank(f.api, storage);
+      const credentials = {
+        ...fakeCredentials(),
+        readCredential: (provider: string) => provider === "openai-codex"
+          ? { type: "oauth", access: "token", accountId: "acc-1" }
+          : { type: "api_key", key: "token" },
+      } as CredentialSourceLike;
+      createTokenTank(f.api, credentials);
       await f.fire("session_start", {});
       const codexFooter = f.status["pi-token-tank"];
       f.ctx.model = { provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"];
@@ -181,7 +182,7 @@ describe("createTokenTank", () => {
     const path = join(dir, "preference.json");
     try {
       const f = fakeAPI();
-      createTokenTank(f.api, fakeStorage(), path);
+      createTokenTank(f.api, fakeCredentials(), path);
       await f.commands["token-tank"]!.handler("full", f.ctx);
       assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { footerMode: "full" });
       assert.ok(f.status["pi-token-tank"]);
@@ -192,7 +193,7 @@ describe("createTokenTank", () => {
     "cleans up on session_shutdown",
     withMockFetch(async () => {
       const f = fakeAPI();
-      createTokenTank(f.api, fakeStorage());
+      createTokenTank(f.api, fakeCredentials());
       await f.fire("session_start", { type: "session_start", reason: "startup" });
       await f.fire("session_shutdown", { type: "session_shutdown", reason: "quit" });
       assert.equal(f.status["pi-token-tank"], undefined);

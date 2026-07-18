@@ -1,5 +1,5 @@
-import type { AuthStorageLike, KimiAuthResult } from "./auth.js";
-import { getKimiAuth, refreshKimiToken } from "./auth.js";
+import type { CredentialSourceLike, KimiAuthResult } from "./auth.js";
+import { getKimiAuth } from "./auth.js";
 import type { ProviderQuota, QuotaWindow } from "./types.js";
 
 const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
@@ -194,8 +194,8 @@ async function performKimiFetch(token: string): Promise<ProviderQuota> {
   };
 }
 
-export async function fetchKimiQuota(storage: AuthStorageLike): Promise<ProviderQuota> {
-  let auth: KimiAuthResult = await getKimiAuth(storage);
+export async function fetchKimiQuota(credentials: CredentialSourceLike): Promise<ProviderQuota> {
+  const auth: KimiAuthResult = await getKimiAuth(credentials);
   if ("error" in auth) {
     return { provider: "kimi", state: "missing", windows: [], error: auth.error };
   }
@@ -205,21 +205,10 @@ export async function fetchKimiQuota(storage: AuthStorageLike): Promise<Provider
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("401") && auth.type === "oauth") {
-      storage.reload();
-      const afterReload = await getKimiAuth(storage);
-      if ("token" in afterReload && afterReload.token !== auth.token) {
-        try {
-          return await performKimiFetch(afterReload.token);
-        } catch (retryError) {
-          return {
-            provider: "kimi",
-            state: "error",
-            windows: [],
-            error: sanitizeError(retryError),
-          };
-        }
-      }
-      const refreshed = await refreshKimiToken(storage, auth.token);
+      const afterResolution = await getKimiAuth(credentials);
+      const refreshed = "token" in afterResolution && afterResolution.token !== auth.token
+        ? afterResolution.token
+        : await credentials.refreshOAuthToken("kimi-coding", auth.token);
       if (refreshed) {
         try {
           return await performKimiFetch(refreshed);

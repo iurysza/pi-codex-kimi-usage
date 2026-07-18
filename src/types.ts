@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AuthStorageLike } from "./auth.js";
+import type { CredentialSourceLike } from "./auth.js";
 
 export type ProviderId = string;
 export type QuotaState = "live" | "stale" | "missing" | "error";
@@ -30,7 +30,7 @@ export interface QuotaProvider {
   id: ProviderId;
   label: string;
   matchesModel(model: ExtensionContext["model"]): boolean;
-  fetch(storage: AuthStorageLike): Promise<ProviderQuota>;
+  fetch(credentials: CredentialSourceLike): Promise<ProviderQuota>;
   credentialsHint: string;
   footerWindows: {
     minimal: string[];

@@ -3,7 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-import { getAuthStorage, type AuthStorageLike } from "./auth.js";
+import { createCredentialSource, type CredentialSourceLike } from "./auth.js";
 import { formatFooter, formatWidget } from "./format.js";
 import { loadFooterMode, saveFooterMode, type FooterMode } from "./preferences.js";
 import { providerForModel as findProviderForModel, providers } from "./providers.js";
@@ -18,7 +18,7 @@ interface CacheEntry {
   inflight?: Promise<ProviderQuota>;
 }
 
-export function createCoordinator(storage: AuthStorageLike, registry: readonly QuotaProvider[]) {
+export function createCoordinator(credentials: CredentialSourceLike, registry: readonly QuotaProvider[]) {
   const caches = new Map<ProviderId, CacheEntry>(registry.map((provider) => [provider.id, {}]));
   const providerById = new Map(registry.map((provider) => [provider.id, provider]));
 
@@ -31,7 +31,7 @@ export function createCoordinator(storage: AuthStorageLike, registry: readonly Q
     }
     if (cache.inflight) return cache.inflight;
 
-    cache.inflight = provider.fetch(storage)
+    cache.inflight = provider.fetch(credentials)
       .then((quota) => {
         const previous = cache.data;
         if (
@@ -91,14 +91,21 @@ export function providerForModel(model: ExtensionContext["model"]): ProviderId |
 
 export function createTokenTank(
   pi: ExtensionAPI,
-  storageOverride?: AuthStorageLike,
+  credentialSourceOverride?: CredentialSourceLike,
   preferenceFile?: string,
   registry: readonly QuotaProvider[] = providers,
 ) {
-  const storage = storageOverride ?? getAuthStorage();
-  const coordinator = createCoordinator(storage, registry);
+  let coordinator: ReturnType<typeof createCoordinator> | undefined;
   let widgetVisible = false;
   let footerMode: FooterMode = "minimal";
+
+  function getCoordinator(ctx: ExtensionContext) {
+    coordinator ??= createCoordinator(
+      credentialSourceOverride ?? createCredentialSource(ctx.modelRegistry),
+      registry,
+    );
+    return coordinator;
+  }
 
   function updateFooter(ctx: ExtensionContext) {
     const provider = findProviderForModel(ctx.model, registry);
@@ -106,27 +113,31 @@ export function createTokenTank(
       ctx.ui.setStatus(STATUS_KEY, undefined);
       return;
     }
-    const quota = coordinator.getSnapshot()[provider.id];
+    const quota = getCoordinator(ctx).getSnapshot()[provider.id];
     ctx.ui.setStatus(
       STATUS_KEY,
       formatFooter(quota, footerMode, makeThemeLike(ctx.ui), provider.footerWindows[footerMode]),
     );
   }
 
-  function updateWidget(ctx: ExtensionContext["ui"]) {
+  function updateWidget(ctx: ExtensionContext) {
     if (!widgetVisible) {
-      ctx.setWidget(WIDGET_KEY, undefined);
+      ctx.ui.setWidget(WIDGET_KEY, undefined);
       return;
     }
-    ctx.setWidget(WIDGET_KEY, formatWidget(coordinator.getSnapshot(), registry, makeThemeLike(ctx), Date.now()));
+    ctx.ui.setWidget(
+      WIDGET_KEY,
+      formatWidget(getCoordinator(ctx).getSnapshot(), registry, makeThemeLike(ctx.ui), Date.now()),
+    );
   }
 
   async function refreshAndRender(ctx: ExtensionContext, force: boolean) {
+    const activeCoordinator = getCoordinator(ctx);
     const provider = findProviderForModel(ctx.model, registry);
     updateFooter(ctx);
-    if (provider) await coordinator.refresh(provider.id, force);
+    if (provider) await activeCoordinator.refresh(provider.id, force);
     updateFooter(ctx);
-    if (widgetVisible) updateWidget(ctx.ui);
+    if (widgetVisible) updateWidget(ctx);
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -140,7 +151,8 @@ export function createTokenTank(
   pi.on("session_shutdown", async (_event, ctx) => {
     ctx.ui.setStatus(STATUS_KEY, undefined);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
-    coordinator.clear();
+    coordinator?.clear();
+    coordinator = undefined;
   });
 
   pi.registerCommand("token-tank", {
@@ -165,9 +177,9 @@ export function createTokenTank(
         return;
       }
       widgetVisible = !widgetVisible;
-      if (widgetVisible) await coordinator.refreshAll(true);
+      if (widgetVisible) await getCoordinator(ctx).refreshAll(true);
       updateFooter(ctx);
-      updateWidget(ctx.ui);
+      updateWidget(ctx);
     },
   });
 }

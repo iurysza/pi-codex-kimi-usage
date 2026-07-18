@@ -1,13 +1,17 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import type { AuthCredential } from "@earendil-works/pi-coding-agent";
+import {
+  readStoredCredential,
+  type ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 
-export type AuthStorageLike = Pick<
-  AuthStorage,
-  "get" | "getApiKey" | "reload" | "getOAuthProviders" | "set"
+export type ModelRegistryLike = Pick<
+  ModelRegistry,
+  "getApiKeyForProvider" | "getRegisteredProviderConfig"
 >;
 
-export function getAuthStorage(): AuthStorage {
-  return AuthStorage.create();
+export interface CredentialSourceLike {
+  getApiKey(providerId: string): Promise<string | undefined>;
+  readCredential(providerId: string): unknown;
+  refreshOAuthToken(providerId: string, currentKey: string): Promise<string | null>;
 }
 
 interface OAuthLikeCredential {
@@ -16,11 +20,85 @@ interface OAuthLikeCredential {
   access?: string;
   refresh?: string;
   expires?: number;
+  [key: string]: unknown;
+}
+
+interface TransientCredential {
+  baseAccess: string;
+  value: OAuthLikeCredential;
 }
 
 function toOAuthLike(cred: unknown): OAuthLikeCredential | undefined {
   if (!cred || typeof cred !== "object" || Array.isArray(cred)) return undefined;
   return cred as OAuthLikeCredential;
+}
+
+export function createCredentialSource(
+  modelRegistry: ModelRegistryLike,
+  readCredential: (providerId: string) => unknown = readStoredCredential,
+): CredentialSourceLike {
+  const transient = new Map<string, TransientCredential>();
+
+  function readCurrentCredential(providerId: string): unknown {
+    const stored = toOAuthLike(readCredential(providerId));
+    const cached = transient.get(providerId);
+    if (stored?.type === "oauth" && cached && cached.baseAccess === stored.access) {
+      return cached.value;
+    }
+    if (cached) transient.delete(providerId);
+    return stored;
+  }
+
+  return {
+    async getApiKey(providerId) {
+      const stored = toOAuthLike(readCredential(providerId));
+      const cached = transient.get(providerId);
+      if (
+        stored?.type === "oauth" &&
+        cached &&
+        cached.baseAccess === stored.access &&
+        cached.value.access
+      ) {
+        return cached.value.access;
+      }
+      if (cached) transient.delete(providerId);
+      return modelRegistry.getApiKeyForProvider(providerId);
+    },
+
+    readCredential: readCurrentCredential,
+
+    async refreshOAuthToken(providerId, currentKey) {
+      const stored = toOAuthLike(readCredential(providerId));
+      if (stored?.type !== "oauth") return null;
+      if (stored.access && stored.access !== currentKey && stored.expires && Date.now() < stored.expires) {
+        return stored.access;
+      }
+      if (!stored.refresh) return null;
+
+      const oauth = modelRegistry.getRegisteredProviderConfig(providerId)?.oauth;
+      if (!oauth) return null;
+
+      try {
+        const refreshed = await oauth.refreshToken({
+          ...stored,
+          access: stored.access ?? currentKey,
+          refresh: stored.refresh,
+          expires: stored.expires ?? 0,
+        });
+        const access = oauth.getApiKey(refreshed);
+        if (!access || access === currentKey || !refreshed.refresh || !Number.isFinite(refreshed.expires)) {
+          return null;
+        }
+        transient.set(providerId, {
+          baseAccess: stored.access ?? currentKey,
+          value: { ...stored, ...refreshed, type: "oauth" },
+        });
+        return access;
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 function extractAccountId(cred: unknown): string | undefined {
@@ -49,13 +127,13 @@ export type CodexAuthResult =
   | { error: string };
 
 export async function getCodexAuth(
-  storage: AuthStorageLike,
+  credentials: CredentialSourceLike,
 ): Promise<CodexAuthResult> {
-  const token = await storage.getApiKey("openai-codex", { includeFallback: false });
+  const token = await credentials.getApiKey("openai-codex");
   if (!token) {
     return { error: "Codex credentials missing. Run /login openai-codex." };
   }
-  const cred = storage.get("openai-codex");
+  const cred = credentials.readCredential("openai-codex");
   let accountId = extractAccountId(cred);
   if (!accountId) {
     accountId = extractAccountIdFromJwt(token);
@@ -73,9 +151,9 @@ export type KimiAuthResult =
   | { error: string };
 
 export async function getKimiAuth(
-  storage: AuthStorageLike,
+  credentials: CredentialSourceLike,
 ): Promise<KimiAuthResult> {
-  const token = await storage.getApiKey("kimi-coding");
+  const token = await credentials.getApiKey("kimi-coding");
   if (!token) {
     const envKey = process.env.KIMI_API_KEY?.trim();
     if (envKey) {
@@ -83,54 +161,6 @@ export async function getKimiAuth(
     }
     return { error: "Kimi credentials missing. Run /login kimi-coding or set KIMI_API_KEY." };
   }
-  const cred = storage.get("kimi-coding");
+  const cred = credentials.readCredential("kimi-coding");
   return { token, type: toOAuthLike(cred)?.type === "oauth" ? "oauth" : "api_key" };
-}
-
-export async function refreshKimiToken(
-  storage: AuthStorageLike,
-  currentKey: string,
-): Promise<string | null> {
-  storage.reload();
-  const cred = storage.get("kimi-coding");
-  if (!cred || toOAuthLike(cred)?.type !== "oauth") {
-    return null;
-  }
-  const oauth = toOAuthLike(cred)!;
-  if (oauth.access && oauth.access !== currentKey && oauth.expires && Date.now() < oauth.expires) {
-    return oauth.access;
-  }
-  if (!oauth.refresh) return null;
-
-  const providers = storage.getOAuthProviders();
-  const provider = providers.find((p) => p.id === "kimi-coding");
-  if (!provider) return null;
-
-  try {
-    const refreshed = await provider.refreshToken({
-      access: oauth.access ?? currentKey,
-      refresh: oauth.refresh,
-      expires: oauth.expires ?? 0,
-    });
-    storage.reload();
-    const after = storage.get("kimi-coding");
-    const afterOAuth = toOAuthLike(after);
-    if (afterOAuth?.access && afterOAuth.access !== currentKey) {
-      return afterOAuth.access;
-    }
-    if (!refreshed.access || !refreshed.refresh || !Number.isFinite(refreshed.expires)) {
-      return null;
-    }
-    const newCred = {
-      ...cred,
-      type: "oauth" as const,
-      access: refreshed.access,
-      refresh: refreshed.refresh,
-      expires: refreshed.expires,
-    };
-    storage.set("kimi-coding", newCred as AuthCredential);
-    return refreshed.access;
-  } catch {
-    return null;
-  }
 }
