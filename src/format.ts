@@ -45,11 +45,15 @@ export function formatResetTime(resetsAt: number, weekly: boolean): string {
   return weekly ? `${date.toLocaleDateString("en-US", { weekday: "short" })} ${time}` : time;
 }
 
-function formatFooterWindow(window: QuotaWindow, label: boolean, stale: boolean, theme: ThemeLike): string {
+function formatFooterWindow(
+  window: QuotaWindow,
+  label: boolean,
+  stale: boolean,
+  theme: ThemeLike,
+  nowMs: number,
+): string {
   const percent = `${window.usedPercent}%${stale ? "~" : ""}`;
-  const reset = window.resetsAt
-    ? `  ↻${label ? " " : "  "}${formatResetTime(window.resetsAt, window.resetStyle === "weekday-time")}`
-    : "";
+  const reset = window.resetsAt ? `  ↻ ${formatResetDuration(window.resetsAt - nowMs)}` : "";
   const prefix = label ? `${window.shortLabel}  ` : "";
   return `${theme.fg("dim", `${prefix}${formatGauge(window.usedPercent)}  `)}${theme.fg(thresholdColor(window.usedPercent), percent)}${theme.fg("dim", reset)}`;
 }
@@ -59,6 +63,7 @@ export function formatFooter(
   mode: FooterMode,
   theme: ThemeLike,
   windowIds?: readonly string[],
+  nowMs = Date.now(),
 ): string {
   if (quota.state === "missing") return theme.fg("dim", "—");
   if (quota.state === "error") return theme.fg("dim", "!");
@@ -71,7 +76,7 @@ export function formatFooter(
   const stale = quota.state === "stale";
   const showLabels = mode === "full" || selected.length === 0;
   return windows
-    .map((window) => formatFooterWindow(window, showLabels, stale, theme))
+    .map((window) => formatFooterWindow(window, showLabels, stale, theme, nowMs))
     .join(theme.fg("dim", "   ·   "));
 }
 

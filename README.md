@@ -9,7 +9,7 @@
 Provider-aware subscription quota status for Pi. It follows the active model and fetches that provider’s quota.
 
 ```text
-▰▱▱▱  24%  ↻  3:25
+▰▱▱▱  24%  ↻ 3h 25m
 ```
 
 ## Supported providers
@@ -58,19 +58,19 @@ Reload Pi after installation or environment changes.
 Minimal mode is the default and shows the provider’s primary window:
 
 ```text
-▰▱▱▱  24%  ↻  3:25
+▰▱▱▱  24%  ↻ 3h 25m
 ```
 
 Full mode adds the configured detail windows:
 
 ```text
-5h  ▰▱▱▱  24%  ↻ 3:25   ·   7d  ▰▱▱▱  15%  ↻ Sun 9:00
+5h  ▰▱▱▱  24%  ↻ 3h 25m   ·   7d  ▰▱▱▱  15%  ↻ 4d 11h
 ```
 
 - Four gauge cells represent 25-point usage buckets.
 - Percentage colors show urgency: green under 70%, yellow under 90%, red at 90%+.
 - `~` after a percentage means the extension is showing stale last-good data.
-- Reset timestamps use local time.
+- Reset countdowns show relative time (`3h 25m`, `4d 11h`, or `soon`).
 
 ## Commands
 
