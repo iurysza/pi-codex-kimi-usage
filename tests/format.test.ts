@@ -6,14 +6,17 @@ import type { ProviderQuota, QuotaSnapshot } from "../src/types.js";
 
 const theme = { fg: (color: string, text: string) => `[${color}:${text}]` };
 const plainTheme = { fg: (_color: string, text: string) => text };
+const NOW_MS = Date.UTC(2025, 6, 12, 0, 0, 0);
+const FIVE_HOUR_RESET_MS = NOW_MS + (3 * 60 + 25) * 60_000;
+const WEEKLY_RESET_MS = NOW_MS + ((4 * 24 + 11) * 60) * 60_000;
 
 function liveQuota(provider: ProviderQuota["provider"], five: number, weekly: number): ProviderQuota {
   return {
     provider, state: "live", fetchedAt: 1752306000000,
     plan: provider === "codex" ? "plus" : "Allegro",
     windows: [
-      { id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time", usedPercent: five, resetsAt: new Date(2025, 6, 12, 3, 25).getTime() },
-      { id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time", usedPercent: weekly, resetsAt: new Date(2025, 6, 13, 9, 0).getTime() },
+      { id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time", usedPercent: five, resetsAt: FIVE_HOUR_RESET_MS },
+      { id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time", usedPercent: weekly, resetsAt: WEEKLY_RESET_MS },
     ],
   };
 }
@@ -28,16 +31,16 @@ describe("footer gauges", () => {
 
   it("renders exact minimal and full shapes", () => {
     const quota = liveQuota("codex", 24, 15);
-    assert.equal(formatFooter(quota, "minimal", plainTheme), "▰▱▱▱  24%  ↻  3:25");
-    assert.equal(formatFooter(quota, "full", plainTheme), "5h  ▰▱▱▱  24%  ↻ 3:25   ·   7d  ▰▱▱▱  15%  ↻ Sun 9:00");
+    assert.equal(formatFooter(quota, "minimal", plainTheme, undefined, NOW_MS), "▰▱▱▱  24%  ↻ 3h 25m");
+    assert.equal(formatFooter(quota, "full", plainTheme, undefined, NOW_MS), "5h  ▰▱▱▱  24%  ↻ 3h 25m   ·   7d  ▰▱▱▱  15%  ↻ 4d 11h");
   });
 
   it("falls back to and labels a remaining weekly window", () => {
     const quota = liveQuota("codex", 24, 34);
     quota.windows = quota.windows.filter((window) => window.id === "weekly");
     assert.equal(
-      formatFooter(quota, "minimal", plainTheme, ["five-hour"]),
-      "7d  ▰▰▱▱  34%  ↻ Sun 9:00",
+      formatFooter(quota, "minimal", plainTheme, ["five-hour"], NOW_MS),
+      "7d  ▰▰▱▱  34%  ↻ 4d 11h",
     );
   });
 
@@ -60,7 +63,7 @@ describe("footer gauges", () => {
   it("marks cached quota percentages as stale", () => {
     const quota = liveQuota("kimi", 48, 35);
     quota.state = "stale";
-    assert.equal(formatFooter(quota, "minimal", plainTheme), "▰▰▱▱  48%~  ↻  3:25");
+    assert.equal(formatFooter(quota, "minimal", plainTheme, undefined, NOW_MS), "▰▰▱▱  48%~  ↻ 3h 25m");
   });
 
   it("colors only exact percentages at thresholds", () => {
